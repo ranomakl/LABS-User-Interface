@@ -1,0 +1,18 @@
+{
+    "experiment_type": "cyclic_flow_electrolysis",
+    "_comment_experiment_type": "name of the process from the backend config",
+    "number_of_nuclei_ref": 1.0,
+    "number_of_nuclei_SM": 1.0,
+    "number_of_nuclei_prod": 1.0,
+    "n_ref/mmol": 0.5,
+    "yield_uncertainty": 3.0,
+    "_comment_yield_uncertainty": "uncertainty of the yield, this is used to calculate the uncertainty of the yield in the bayesian optimization (in %)",
+    "acquisition_function": "UpperConfidenceBound",
+    "_comment_acquisition_function": "acquisition function for the bayesian optimization, can be one of: UpperConfidenceBound or ExpectedImprovement",
+    "beta": 5.0,
+    "_comment_beta": "beta value for UCB in the bayesian optimization, this is the initial value",
+    "beta_decay": 0.05,
+    "_comment_beta_decay": "decay of beta per iteration",
+    "beta_decay_delay": 36,
+    "_comment_beta_decay_delay": "delay of the beta decay, after this many iterations the beta decay will start"
+}

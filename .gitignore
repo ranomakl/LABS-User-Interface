@@ -177,3 +177,6 @@ pip3.exe
 .automation_frontend/Scripts/pip3.10.exe
 .automation_frontend/Scripts/pip3.exe
 database-devel.sqlite3
+database-devel - Copy.sqlite3
+app/bayesian/Archive/
+

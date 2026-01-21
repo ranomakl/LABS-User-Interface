@@ -55,7 +55,7 @@ def add_new_station():
     if form.validate_on_submit():
         station = ExperimentalStation(
             name=form.station_name.data,
-            address_name=form.address.data,
+            address=form.address.data,
             location=form.station_location.data,
             api_key=form.station_api_key.data,
         )
@@ -88,7 +88,7 @@ def update_station(station_id):
         try:
             station_to_update.update(
                 name=request.form["station_name"],
-                address_name=request.form["address"],
+                address=request.form["address"],
                 api_key=request.form["station_api_key"],
                 location=request.form["station_location"],
             )
@@ -150,7 +150,7 @@ def get_available_experiments_for_station(station_id):
         ExperimentalStation.get_all_routine_names_by_station_id(station_id)
     )
 
-    request_url = f"http://{station_to_configure.address_name}/api/get_experiment_types"
+    request_url = f"http://{station_to_configure.address}/api/get_experiment_types"
 
     response = requests.get(request_url)
 

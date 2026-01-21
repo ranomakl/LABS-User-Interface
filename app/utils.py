@@ -1,4 +1,4 @@
-from msilib.schema import Error
+#from msilib.schema import Error
 from . import db
 
 
@@ -18,7 +18,8 @@ class ModelMixin(object):
             db.session.commit()
         except Exception as e:
             db.session.rollback()
-            return Error
+            print("Error for delete database in utilis.py")
+            #return Error
 
         return self
 

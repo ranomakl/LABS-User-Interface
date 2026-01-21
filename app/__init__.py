@@ -20,6 +20,7 @@ def create_app(environment="development"):
     # from .experiments.models import ExperimentalDesign, ExperimentalStation
     from .monitoring.views import monitoring_blueprint
     from .experiments.views import experiments_blueprint
+    from .bayesian.views import bayesian_blueprint
 
     # Instantiate app.
     app = Flask(__name__)
@@ -41,6 +42,7 @@ def create_app(environment="development"):
     app.register_blueprint(main_blueprint)
     app.register_blueprint(monitoring_blueprint)
     app.register_blueprint(experiments_blueprint)
+    app.register_blueprint(bayesian_blueprint)
 
     # user_manager = UserManager(app, db, User)
 

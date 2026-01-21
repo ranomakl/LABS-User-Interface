@@ -2,6 +2,7 @@ from datetime import datetime
 from os import abort
 from random import random
 import string
+import secrets
 from flask import url_for
 from flask_admin import Admin
 from flask_admin.contrib.sqla import ModelView
@@ -282,7 +283,7 @@ class User(db.Model, UserMixin, ModelMixin):
         if inspect(db.engine).has_table("users"):
             if cls.query.filter_by(username="admin").first() is None:
                 random_password = "".join(
-                    random.choice(string.ascii_letters) for i in range(10)
+                    secrets.choice(string.ascii_letters) for i in range(10)
                 )
                 admin_user = cls(
                     username="admin",

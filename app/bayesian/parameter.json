@@ -1,0 +1,75 @@
+{
+    "current":{
+        "cfg_name": "current",
+        "_comment_cfg_name": "this is the name of the variable that is written in the config for the backend",
+        "type": "continuous",
+        "_comment_type": "continuous for continous parameter, that should be included in the bayesian optimization, set to null to exclude from bayesian optimization",
+        "unit": "A",
+        "_comment_unit": "unit of the variable",
+        "min": 0.06,
+        "_comment_min": "minimum value of the parameter in the bayesian optimization, min and max have no influenze if type is set to null",
+        "max": 0.216,
+        "_comment_max": "maximum value of the parameter in the bayesian optimization",
+        "convert": null,
+        "_comment_convert": "converter function to convert the parameter to the backend format, if not needed, set to null",
+        "limiting_reagent": false,
+        "_comment_limiting_reagent": "if this parameter is a limiting reagent, set to true, this will be used to calculate the limiting reagent",
+        "excludet_from_BO": false,
+        "_comment_excluded_from_BO": "exclude this parameter from the bayesian optimization"
+    },
+    "applied_charge":{
+        "cfg_name": "amount_of_charge",
+        "type": "continuous",
+        "unit": "F",
+        "min": 7.5,
+        "max": 9.5,
+        "convert": "converter_applied_charge",
+        "limiting_reagent": false
+    },
+    "flowrate":{
+        "cfg_name": "eleflowrate",
+        "type": "continuous",
+        "unit": null,
+        "min": 3.0,
+        "max": 5.0,
+        "convert": null,
+        "limiting_reagent": false
+    },
+    "DMSO_equivalents":{
+        "cfg_name": "dmsovolume",
+        "type": "continuous",
+        "unit": "Eq",
+        "min": 5.0,
+        "max": 20.0,
+        "convert": "converter_DMSO_equivalents",
+        "limiting_reagent": false
+    },
+    "SE_concentration":{
+        "cfg_name": "sevolume",
+        "type": "continuous",
+        "unit": "mL",
+        "min": 0.15,
+        "max": 0.25,
+        "convert": "converter_SE_concentration",
+        "limiting_reagent": false
+    },
+    "nitro_concentration":{
+        "cfg_name": "nitrovolume",
+        "type": "continuous",
+        "unit": "mL",
+        "min": 0.0625,
+        "max": 0.15,
+        "convert": "converter_nitro_concentration",
+        "limiting_reagent": true,
+        "molarity": 1.2
+    },
+    "volume":{
+        "cfg_name": "methanolvolume",
+        "type":"continuous",
+        "unit":"mL",
+        "min": 8.0,
+        "max": 12.0,
+        "convert": "calculate_methanolvolume",
+        "limiting_reagent": false
+    }
+}

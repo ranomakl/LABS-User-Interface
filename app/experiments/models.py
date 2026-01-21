@@ -45,7 +45,8 @@ Routines_in_Stations = db.Table(
 
 
 class ExperimentalRoutines(db.Model, ModelMixin):
-    """This class is used to create experimental routines. Routines are not defined by the user but downloaded from a registred station. The user can then use the routines to create experiments."""
+    """This class is used to create experimental routines. Routines are not defined by the user but downloaded from a registred station. 
+    The user can then use the routines to create experiments."""
 
     __tablename__ = "experimental_routines"
 
@@ -564,7 +565,7 @@ class Stage(db.Model, ModelMixin):
             parameters_with_missing_values = (
                 df.loc[:, df.columns != "run_id"].isna().any()
             )
-            for parameter, missing in parameters_with_missing_values.iteritems():
+            for parameter, missing in parameters_with_missing_values.items():
                 # this gets only the first occuring error #TODO: add all errors
                 if missing:
                     flash(
@@ -743,6 +744,7 @@ class Stage(db.Model, ModelMixin):
             joined_data = experiment_meta_data | experiment_data
 
             try:
+                #print(station.address)
                 request_url = f"http://{station.address}/api/add_experiment"
                 r = requests.post(request_url, data=joined_data)
                 r.raise_for_status()
