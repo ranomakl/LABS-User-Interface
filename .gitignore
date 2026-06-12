@@ -179,4 +179,7 @@ pip3.exe
 database-devel.sqlite3
 database-devel - Copy.sqlite3
 app/bayesian/Archive/
+**/__pycache__/
+.matplotlib-cache/
+.joblib-cache/
 

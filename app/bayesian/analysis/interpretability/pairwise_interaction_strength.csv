@@ -1,0 +1,11 @@
+descriptor_a,descriptor_b,interaction_strength_yield_points
+current,applied_charge,0.9828116776285677
+current,DMSO_equivalents,0.5440833732636841
+applied_charge,DMSO_equivalents,0.4770596666537165
+applied_charge,nitro_concentration,0.3808493569267639
+current,nitro_concentration,0.378017686525279
+DMSO_equivalents,SE_concentration,0.3158679074937713
+DMSO_equivalents,nitro_concentration,0.2980473790812581
+applied_charge,SE_concentration,0.20084101271641153
+nitro_concentration,SE_concentration,0.18109907118908608
+current,SE_concentration,0.1690043190563243
