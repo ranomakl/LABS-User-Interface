@@ -80,7 +80,7 @@ export class LiveValues {
     table.className = "table table-sm table-striped";
     table.style.width = "auto";
     table.innerHTML =
-      "<thead><tr><th>Device</th><th>Observable</th><th>Value</th><th>Last update</th></tr></thead>";
+      "<thead><tr><th>Device</th><th>Observable</th><th>Value</th><th>Updated</th></tr></thead>";
     this.table_body = document.createElement("tbody");
     table.appendChild(this.table_body);
     this.anchor.appendChild(heading);
@@ -104,15 +104,32 @@ export class LiveValues {
       const time_cell = document.createElement("td");
       tr.append(device_cell, observable_cell, value_cell, time_cell);
       this.table_body.appendChild(tr);
-      row = { value_cell: value_cell, time_cell: time_cell };
+      row = { value_cell: value_cell, time_cell: time_cell, last_timestamp: null };
       this.rows.set(key, row);
     }
     row.value_cell.innerText = this.format_value(value);
-    // gleiche Zeitdarstellung wie plots.js (get_readable_date)
-    row.time_cell.innerText = new Date(timestamp * 1000).toLocaleTimeString("de-DE");
+    row.last_timestamp = timestamp;
+    this.render_age(row);
+  }
+
+  // "Updated" zeigt das ALTER des Werts, nicht die Uhrzeit: solange alle Geraete liefern,
+  // steht ueberall dasselbe - informativ wird die Spalte genau dann, wenn ein Wert NICHT
+  // mehr nachkommt (Polling gestoppt, Geraet haengt). Deshalb: >5 s ohne Update -> rot.
+  render_age(row) {
+    if (row.last_timestamp === null) {
+      return;
+    }
+    const age = Math.max(0, Math.round(Date.now() / 1000 - row.last_timestamp));
+    row.time_cell.innerText = age <= 1 ? "now" : `${age} s ago`;
+    const stale = age > 5;
+    row.time_cell.style.color = stale ? "#c00" : "#888";
+    row.time_cell.style.fontWeight = stale ? "600" : "normal";
   }
 
   update_elapsed() {
+    for (const row of this.rows.values()) {
+      this.render_age(row);
+    }
     if (!this.elapsed_span || this.start_timestamp === null) {
       return;
     }
