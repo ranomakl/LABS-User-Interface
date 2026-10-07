@@ -13,6 +13,10 @@ export class Plot_manager {
   on_source_event_function(event) {
     const data = JSON.parse(event.data);
 
+    // Zahlentabelle (live_values.js) hoert denselben Datenstrom mit - bewusst per CustomEvent
+    // statt einer zweiten EventSource, damit das Backend nur einmal pro Sekunde gefragt wird.
+    document.dispatchEvent(new CustomEvent("monitoring-update", { detail: data }));
+
     // If first message switch true, set current experiment
     if (this.source_first_message) {
       this.current_experiment = data.current_experiment;

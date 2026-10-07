@@ -34,6 +34,7 @@
     <div class="container" id="device_information_header">
 
     </div>
+    <div class="container" id="live_values"></div>
     <div class="container" id="devices_wrapper">
         <div class="container" id="devices">
 
@@ -69,9 +70,14 @@
 <script type="module">
     import { Experiment_table } from "{{ url_for('static', filename='tables.js') }}";
     import { Plot_manager } from "{{ url_for('static', filename='plots.js') }}";
+    import { LiveValues } from "{{ url_for('static', filename='live_values.js') }}";
     document.addEventListener("DOMContentLoaded", function () {
 
         const plot_manager = new Plot_manager("{{ url_for('monitoring.chart_data', deviceID = station.id) }}", "{{ url_for('monitoring.get_active_experiment_parameter_value', station_id = station.id) }}")
+
+        // Zahlentabelle: hoert das "monitoring-update"-Event aus plots.js mit (gleiche Datenquelle)
+        const live_values = new LiveValues("live_values");
+        document.addEventListener("monitoring-update", (event) => live_values.handle_update(event.detail));
 
         const table_data_source = new EventSource("{{ url_for('monitoring.experiment_table_data',deviceID= station.id, from_timestamp=last_timestamp) }}");
         // Array to store the div-ids for all tables, if a new table is in datastream, the div name will be registerd during div creation.
