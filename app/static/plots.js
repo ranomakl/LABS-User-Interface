@@ -59,7 +59,11 @@ export class Plot_manager {
           plots: [],
         };
         this.charts.push(device_group);
+        // 08.10.2026: Index auf die neue Gruppe setzen. Vorher blieb er -1, dadurch wurde die
+        // ERSTE Nachricht (= komplette Historie seit Experimentstart) verworfen und die Kurven
+        // begannen erst mit der zweiten Nachricht, also beim Seitenaufruf.
       }
+      const charts_index_now = charts_index >= 0 ? charts_index : this.charts.length - 1;
 
       // Iterate over all observabes for device
       for (const [observable, observable_values] of Object.entries(
@@ -70,19 +74,19 @@ export class Plot_manager {
           continue;
         }
 
-        if (charts_index >= 0) {
-          // console.log(this.charts[charts_index])
-          const plot_index = this.charts[charts_index].plots.findIndex(
+        if (charts_index_now >= 0) {
+          // console.log(this.charts[charts_index_now])
+          const plot_index = this.charts[charts_index_now].plots.findIndex(
             (plot) => {
               return plot.observable === observable;
             }
           );
 
           if (plot_index > -1) {
-            this.charts[charts_index].plots[
+            this.charts[charts_index_now].plots[
               plot_index
             ].plot.update_data_storage(observable_values);
-            this.charts[charts_index].plots[plot_index].plot.update_plot_data();
+            this.charts[charts_index_now].plots[plot_index].plot.update_plot_data();
           } else {
             var device_div = this.append_device_to_dom(device);
 
@@ -95,7 +99,7 @@ export class Plot_manager {
                 device_div
               ),
             };
-            this.charts[charts_index].plots.push(charts_dict);
+            this.charts[charts_index_now].plots.push(charts_dict);
           }
         }
       }
@@ -501,6 +505,8 @@ class PlotObject {
 }
 
 class LinePlot extends PlotObject {
+  static DEFAULT_COLOR = "rgb(193, 0, 42)";
+
   constructor(
     id,
     anchor_div_id,
@@ -522,8 +528,8 @@ class LinePlot extends PlotObject {
     );
     this.observable = observable;
     this.type = type;
-    this.point_color = "rgb(193 , 0 , 42)";
-    this.borderColor = "rgb(193 , 0 , 42)"; //'rgb(181, 0, 0)'
+    this.point_color = "rgb(193, 0, 42)";
+    this.borderColor = "rgb(193, 0, 42)"; //'rgb(181, 0, 0)'
     this.config = this.get_plot_config();
   }
 
@@ -535,19 +541,23 @@ class LinePlot extends PlotObject {
           {
             data: [],
             label: this.observable,
-            borderColor: this.borderColor,
+            // this.borderColor wird erst NACH super() gesetzt, get_plot_config laeuft aber schon
+            // im Konstruktor der Basisklasse -> war undefined, Linie grau. Deshalb Rueckfall.
+            borderColor: this.borderColor || LinePlot.DEFAULT_COLOR,
             fill: false,
           },
         ],
       },
       options: {
         spanGaps: true,
-        animation: true,
+        animation: false, // bei 1-2 Punkten/s pro Kurve sonst Dauer-Animation
         responsive: true,
-        parsing: {
-          xAxisKey: "time",
-          yAxisKey: "value",
-        },
+        // 08.10.2026: X-Achse = Zeitstempel. Datenpunkte sind {x: Unix-ms, y: Wert} (Backend-Zeit
+        // des Messwerts); die Achse ist linear in ms und beschriftet die Ticks als Uhrzeit.
+        // (Bewusst kein Chart.js-"time"-Scale: der date-fns-Adapter wird in detail.html VOR dem
+        // Chart.js 3.7.0 aus base.html geladen und haengt deshalb an der falschen Chart-Instanz.)
+        parsing: false,
+        normalized: true,
         datasets: {
           line: {
             pointRadius: 0, // disable for all `'line'` datasets
@@ -558,6 +568,18 @@ class LinePlot extends PlotObject {
             radius: 0, // default to disabled in all datasets
           },
         },
+        scales: {
+          x: {
+            type: "linear",
+            title: { display: true, text: "Uhrzeit" },
+            ticks: {
+              maxRotation: 0,
+              autoSkip: true,
+              maxTicksLimit: 12,
+              callback: (value) => LinePlot.format_clock(value),
+            },
+          },
+        },
         plugins: {
           legend: {
             position: "top",
@@ -565,6 +587,19 @@ class LinePlot extends PlotObject {
           title: {
             display: true,
             text: this.observable,
+          },
+          tooltip: {
+            callbacks: {
+              title: (items) => (items.length ? LinePlot.format_clock(items[0].parsed.x, true) : ""),
+            },
+          },
+          // Lange Laeufe (219 min bei 2 Hz = ~26.000 Punkte): fuer die Darstellung auf ~1000 Punkte
+          // ausduennen (LTTB behaelt Extremwerte), alle Punkte bleiben im Datensatz erhalten.
+          decimation: {
+            enabled: true,
+            algorithm: "lttb",
+            samples: 1000,
+            threshold: 2000,
           },
         },
       },
@@ -575,6 +610,14 @@ class LinePlot extends PlotObject {
   get_plot_context() {
     const context = document.getElementById(this.id).getContext("2d");
     return context;
+  }
+
+  // Unix-ms -> "HH:MM:SS" (Browser-Zeitzone). Mit with_date=true zusaetzlich das Datum,
+  // falls ein Lauf ueber Mitternacht geht.
+  static format_clock(ms, with_date = false) {
+    const date = new Date(ms);
+    const time = date.toLocaleTimeString("de-DE", { hour12: false });
+    return with_date ? `${date.toLocaleDateString("de-DE")} ${time}` : time;
   }
 
   set_plot_object() {
@@ -650,33 +693,22 @@ class LinePlot extends PlotObject {
     //   });
     // }
     else {
-      // Iterate through each data point in the observable_data array
-      observable_data.forEach((data_point) => {
-        const [timestamp, value] = data_point; // Destructure the [timestamp, value] pair
-
-        // Check if the plot data already contains a data point with the same timestamp
-        const existing_data_point_index =
-          this.plot.data.labels.indexOf(timestamp);
-        if (existing_data_point_index > -1) {
-          // If a data point with the same timestamp already exists, update its value
-          this.plot.data.datasets.forEach((dataset) => {
-            dataset.data[existing_data_point_index] = value;
-          });
-        } else {
-          // If a data point with the same timestamp does not exist, add a new data point
-          this.plot.data.labels.push(timestamp);
-          this.plot.data.datasets.forEach((dataset) => {
-            dataset.data.push(value);
-          });
-        }
-
-        // Check if the plot data contains more than 600 entries
-        if (this.plot.data.labels.length > 600) {
-          // Shift the first data point off the data arrays
-          this.plot.data.labels.shift();
-          this.plot.data.datasets.forEach((dataset) => {
-            dataset.data.shift();
-          });
+      // Jeder Messwert wird als {x: Unix-ms, y: Wert} angehaengt. Das Backend liefert nur neue
+      // Punkte seit der letzten Abfrage, in Zeitreihenfolge; ein Punkt mit demselben Zeitstempel
+      // wie der letzte (z.B. erste Antwort nach Seitenneuladen) ueberschreibt diesen.
+      // Es wird NICHT mehr abgeschnitten (frueher 600 Punkte): die ganze Laufzeit bleibt sichtbar,
+      // die Darstellung duennt das Dezimierungs-Plugin aus (siehe get_plot_config).
+      const points = observable_data
+        .filter((data_point) => typeof data_point[1] === "number")
+        .map(([timestamp, value]) => ({ x: timestamp * 1000, y: value }));
+      this.plot.data.datasets.forEach((dataset) => {
+        for (const point of points) {
+          const last = dataset.data[dataset.data.length - 1];
+          if (last !== undefined && last.x === point.x) {
+            last.y = point.y;
+          } else {
+            dataset.data.push(point);
+          }
         }
       });
     }
