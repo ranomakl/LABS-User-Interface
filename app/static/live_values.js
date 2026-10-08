@@ -23,6 +23,13 @@ export class LiveValues {
     this.start_timestamp = null; // aeltester Datenpunkt des laufenden Experiments (~ Startzeit)
     this.elapsed_span = null;
     this.elapsed_timer = null;
+    // Zeitbasis vom Backend (get_updates: timestamp, experiment_started, experiment_planned_end).
+    // Es werden nur DIFFERENZEN von Backend-Zeitstempeln benutzt und ab dem Empfang mit der
+    // Browser-Uhr weitergezaehlt - ein Uhrenversatz zwischen Pi und Browser-PC faellt so heraus.
+    this.backend_now = null;        // data.timestamp der letzten Antwort (Sekunden)
+    this.received_at = null;        // Date.now() beim Empfang dieser Antwort (ms)
+    this.backend_started = null;    // experiment_started (Sekunden, Backend-Uhr)
+    this.backend_planned_end = null; // experiment_planned_end (Sekunden, Backend-Uhr) oder null
   }
 
   handle_update(data) {
@@ -31,6 +38,12 @@ export class LiveValues {
     if (data.current_experiment !== this.current_experiment) {
       this.current_experiment = data.current_experiment;
       this.reset();
+    }
+    if (typeof data.timestamp === "number") {
+      this.backend_now = data.timestamp;
+      this.received_at = Date.now();
+      this.backend_started = typeof data.experiment_started === "number" ? data.experiment_started : null;
+      this.backend_planned_end = typeof data.experiment_planned_end === "number" ? data.experiment_planned_end : null;
     }
     for (const [device, device_values] of Object.entries(data.updates || {})) {
       for (const [observable, points] of Object.entries(device_values)) {
@@ -52,6 +65,10 @@ export class LiveValues {
     this.rows.clear();
     this.table_body = null;
     this.start_timestamp = null;
+    this.backend_now = null;
+    this.received_at = null;
+    this.backend_started = null;
+    this.backend_planned_end = null;
     this.elapsed_span = null;
     if (this.elapsed_timer !== null) {
       clearInterval(this.elapsed_timer);
@@ -130,15 +147,40 @@ export class LiveValues {
     for (const row of this.rows.values()) {
       this.render_age(row);
     }
-    if (!this.elapsed_span || this.start_timestamp === null) {
+    if (!this.elapsed_span) {
       return;
     }
-    let seconds = Math.max(0, Math.floor(Date.now() / 1000 - this.start_timestamp));
+    // geschaetzte Backend-Zeit jetzt = letzter Backend-Zeitstempel + seither vergangene Browserzeit
+    const backend_now = this.backend_now === null ? null : this.backend_now + (Date.now() - this.received_at) / 1000;
+    let elapsed = null;
+    if (backend_now !== null && this.backend_started !== null) {
+      elapsed = backend_now - this.backend_started;
+    } else if (this.start_timestamp !== null) {
+      elapsed = Date.now() / 1000 - this.start_timestamp; // Rueckfall: aeltester Datenpunkt
+    }
+    if (elapsed === null) {
+      return;
+    }
+    let text = `running for ${this.format_duration(elapsed)}`;
+    if (backend_now !== null && this.backend_planned_end !== null) {
+      const remaining = this.backend_planned_end - backend_now;
+      const end_clock = new Date(Date.now() + remaining * 1000);
+      const hhmm = `${String(end_clock.getHours()).padStart(2, "0")}:${String(end_clock.getMinutes()).padStart(2, "0")}`;
+      text += remaining >= 0
+        ? ` · ends ~${hhmm} (in ${this.format_duration(remaining)})`
+        : ` · planned end ${hhmm} (overdue ${this.format_duration(-remaining)})`;
+    }
+    this.elapsed_span.innerText = text;
+  }
+
+  // Sekunden -> "MM:SS" bzw. "H:MM:SS"
+  format_duration(total_seconds) {
+    let seconds = Math.max(0, Math.floor(total_seconds));
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     seconds = seconds % 60;
     const mmss = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-    this.elapsed_span.innerText = `running for ${hours > 0 ? hours + ":" : ""}${mmss}`;
+    return hours > 0 ? `${hours}:${mmss}` : mmss;
   }
 
   format_value(value) {
