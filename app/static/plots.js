@@ -687,6 +687,16 @@ class LinePlot extends PlotObject {
     return context;
   }
 
+  // Messwert als Zahl, sonst null (Text wie "Good" oder leer wird nicht gezeichnet).
+  static to_number(value) {
+    if (typeof value === "number") return Number.isFinite(value) ? value : null;
+    if (typeof value === "string" && value.trim() !== "") {
+      const number = Number(value);
+      return Number.isFinite(number) ? number : null;
+    }
+    return null;
+  }
+
   // Unix-ms -> "HH:MM:SS" (Browser-Zeitzone). Mit with_date=true zusaetzlich das Datum,
   // falls ein Lauf ueber Mitternacht geht.
   static format_clock(ms, with_date = false) {
@@ -773,8 +783,11 @@ class LinePlot extends PlotObject {
       // wie der letzte (z.B. erste Antwort nach Seitenneuladen) ueberschreibt diesen.
       // Es wird NICHT mehr abgeschnitten (frueher 600 Punkte): die ganze Laufzeit bleibt sichtbar,
       // die Darstellung duennt das Dezimierungs-Plugin aus (siehe get_plot_config).
+      // Zahlen im Textformat ("5.0", wie sie manche Treiber liefern) werden mitgezeichnet;
+      // echter Text (Status "Good", Zustand) und nicht-endliche Werte werden uebersprungen.
       const points = observable_data
-        .filter((data_point) => typeof data_point[1] === "number")
+        .map(([timestamp, value]) => [timestamp, LinePlot.to_number(value)])
+        .filter((data_point) => data_point[1] !== null)
         .map(([timestamp, value]) => ({ x: timestamp * 1000, y: value }));
       this.plot.data.datasets.forEach((dataset) => {
         for (const point of points) {
