@@ -114,6 +114,61 @@ export class Plot_manager {
     h2_experiment.innerText = `Current experiment: ${current_experiment}`;
   }
 
+  // Zeitfenster-Umschalter fuer alle Kurven: "ganzer Lauf" (Standard) oder nur die letzten
+  // 10 min / 1 h. Die Daten bleiben vollstaendig, nur der sichtbare X-Bereich wechselt
+  // (LinePlot.apply_window). Auswahl wird im Browser gemerkt (localStorage).
+  generate_window_selector() {
+    const choices = [
+      { label: "last 10 min", seconds: 600 },
+      { label: "last hour", seconds: 3600 },
+      { label: "whole run", seconds: null },
+    ];
+    let stored = null;
+    try {
+      stored = window.localStorage.getItem("monitoring_window_seconds");
+    } catch (e) {
+      stored = null;
+    }
+    LinePlot.window_seconds = stored === null || stored === "" ? null : Number(stored);
+
+    const group = document.createElement("div");
+    group.className = "btn-group btn-group-sm mb-3";
+    group.setAttribute("role", "group");
+    group.setAttribute("aria-label", "time window");
+    const buttons = [];
+    const render = () => {
+      for (const { button, seconds } of buttons) {
+        const active = seconds === LinePlot.window_seconds;
+        button.className = active ? "btn btn-primary" : "btn btn-outline-primary";
+      }
+    };
+    for (const { label, seconds } of choices) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.innerText = label;
+      button.addEventListener("click", () => {
+        LinePlot.window_seconds = seconds;
+        try {
+          window.localStorage.setItem("monitoring_window_seconds", seconds === null ? "" : String(seconds));
+        } catch (e) {
+          // localStorage nicht verfuegbar - Auswahl gilt nur fuer diese Seite
+        }
+        render();
+        for (const device of this.charts) {
+          for (const plot of device.plots) {
+            if (plot.plot instanceof LinePlot) {
+              plot.plot.apply_window(true);
+            }
+          }
+        }
+      });
+      group.appendChild(button);
+      buttons.push({ button, seconds });
+    }
+    render();
+    return group;
+  }
+
   generate_DOM_header() {
     const header_anchor = document.getElementById("device_information_header");
 
@@ -129,6 +184,7 @@ export class Plot_manager {
 
     header.appendChild(headline);
     header.appendChild(subtitle);
+    header.appendChild(this.generate_window_selector());
     this.append_experiment_overview_to_dom();
     header_anchor.appendChild(header);
   }
@@ -506,6 +562,25 @@ class PlotObject {
 
 class LinePlot extends PlotObject {
   static DEFAULT_COLOR = "rgb(193, 0, 42)";
+  static window_seconds = null; // null = ganzer Lauf; sonst sichtbarer Bereich in Sekunden
+
+  // Sichtbaren X-Bereich setzen: [letzter Datenpunkt - Fenster, letzter Datenpunkt]. Bezug ist der
+  // Backend-Zeitstempel des neuesten Werts, nicht die Browser-Uhr (Uhrenversatz Pi/PC egal).
+  apply_window(update = false) {
+    if (!this.plot) {
+      return;
+    }
+    const scale_x = this.plot.options.scales.x;
+    const data = this.plot.data.datasets[0].data;
+    if (LinePlot.window_seconds === null || data.length === 0) {
+      delete scale_x.min;
+    } else {
+      scale_x.min = data[data.length - 1].x - LinePlot.window_seconds * 1000;
+    }
+    if (update) {
+      this.plot.update();
+    }
+  }
 
   constructor(
     id,
@@ -714,6 +789,7 @@ class LinePlot extends PlotObject {
     }
 
     // Update the plot with the new data
+    this.apply_window(false);
     this.plot.update();
   }
 }
