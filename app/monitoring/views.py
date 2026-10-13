@@ -108,6 +108,26 @@ def deviceOverview():
                 }
                 return station_dict
             elif (
+                json_data["status"].lower() == "paused"
+                and json_data.get("step_mode")
+                and json_data.get("finished_runs", 0) > 0
+            ):
+                # 13.10.2026 Schrittmodus (Backend step_mode): nach jedem Schritt haelt das Backend an,
+                # der naechste Schritt startet erst mit "Start Experiments".
+                next_name = json_data.get("next_experiment_name") or ""
+                total = json_data["total_experiments_queued"]
+                done = json_data.get("finished_runs", 0)
+                if next_name:
+                    text = f"Paused - step {done} of {total} done, next: {next_name} - press Start Experiments"
+                else:
+                    text = f"Paused - all {done} steps done, send the next step and press Start Experiments"
+                station_dict = {
+                    "status": text,
+                    "running_experiment_name": next_name,
+                    "total_experiments_queued": total,
+                    "current_run_number": done,
+                }
+            elif (
                 json_data["current_run_number"] == 0
                 and json_data["status"].lower() == "paused"
             ):
