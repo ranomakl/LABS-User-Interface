@@ -11,10 +11,18 @@
 
 <div class="container-xxl">
 
+    <!-- 16.10.2026 Statuszeile: alle 2 s aus api_station_status (gleicher Text wie die Uebersicht).
+         Wartet ein Schritt auf "Start Experiments", wird die Zeile gruen und der Start-Knopf blinkt. -->
+    <style>
+        @keyframes labs-pulse { 0% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0.7); } 70% { box-shadow: 0 0 0 12px rgba(25, 135, 84, 0); } 100% { box-shadow: 0 0 0 0 rgba(25, 135, 84, 0); } }
+        .labs-waiting { animation: labs-pulse 1.5s infinite; }
+    </style>
+    <div id="station_status" class="alert alert-secondary py-2 mb-3" role="status">Status: loading ...</div>
+
     <div class="row">
         <div class="col-md-2">
             <form method="POST" action="{{ url_for('monitoring.api_start', station_address= station.address ) }}">
-                <button type="submit" class="btn btn-primary">Start Experiments</button>
+                <button type="submit" id="start_button" class="btn btn-primary">Start Experiments</button>
             </form>
         </div>
         &nbsp;
@@ -78,6 +86,42 @@
         // Zahlentabelle: hoert das "monitoring-update"-Event aus plots.js mit (gleiche Datenquelle)
         const live_values = new LiveValues("live_values");
         document.addEventListener("monitoring-update", (event) => live_values.handle_update(event.detail));
+
+        // 16.10.2026 Statuszeile ueber den Knoepfen (Schrittmodus): alle 2 s den aufbereiteten
+        // Stationsstatus holen. Wartet ein Schritt -> gruen + Start-Knopf blinkt; laeuft einer -> blau.
+        const status_url = "{{ url_for('monitoring.api_station_status', station_id = station.id) }}";
+        const status_div = document.getElementById("station_status");
+        const start_button = document.getElementById("start_button");
+        const set_status = (text, kind, waiting) => {
+            status_div.textContent = text;
+            status_div.className = `alert alert-${kind} py-2 mb-3`;
+            start_button.className = waiting ? "btn btn-success labs-waiting" : "btn btn-primary";
+        };
+        const poll_status = async () => {
+            try {
+                const response = await fetch(status_url, { cache: "no-store" });
+                if (!response.ok) { throw new Error(`HTTP ${response.status}`); }
+                const s = await response.json();
+                const raw = String(s.raw_status || "").toLowerCase();
+                if (raw === "offline") {
+                    set_status("Status: backend offline", "danger", false);
+                } else if (s.waiting_for_start && s.finished_runs > 0) {
+                    set_status(`Status: ${s.status}`, "success", true);
+                } else if (s.waiting_for_start) {
+                    set_status(`Status: Paused - not started, ${s.total_experiments_queued} step(s) queued - press Start Experiments`, "success", true);
+                } else if (raw === "busy") {
+                    set_status(`Status: Running - step ${s.current_run_number} of ${s.total_experiments_queued}: ${s.running_experiment_name}`, "primary", false);
+                } else if (raw === "stopped" || raw === "failed") {
+                    set_status(`Status: ${s.status} - restart the backend before continuing`, "danger", false);
+                } else {
+                    set_status(`Status: ${s.status}`, "secondary", false);
+                }
+            } catch (error) {
+                set_status(`Status: unknown (${error.message})`, "warning", false);
+            }
+        };
+        poll_status();
+        setInterval(poll_status, 2000);
 
         const table_data_source = new EventSource("{{ url_for('monitoring.experiment_table_data',deviceID= station.id, from_timestamp=last_timestamp) }}");
         // Array to store the div-ids for all tables, if a new table is in datastream, the div name will be registerd during div creation.

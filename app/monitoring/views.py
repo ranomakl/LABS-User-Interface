@@ -81,6 +81,94 @@ def experiment_table_data(deviceID):
     return Response(get_updates(), mimetype="text/event-stream")
 
 
+def get_station_status(station) -> dict:
+    """Stationsstatus aus /api/station_overview des Backends, aufbereitet als Text fuer die Uebersicht
+    (monitoring/overview.html) und die Statuszeile der Stationsseite (monitoring/detail.html).
+    16.10.2026: aus deviceOverview herausgezogen, damit die Stationsseite denselben Text alle 2 s
+    nachladen kann (Route api_station_status). Zusaetzliche Felder fuer die Stationsseite:
+    raw_status, step_mode, finished_runs, next_experiment_name, waiting_for_start (True = es wartet
+    ein Schritt, "Start Experiments" ist jetzt dran)."""
+    request_url = f"http://{station.get_address_address(station.id)}/api/station_overview"
+
+    try:
+        r = requests.post(request_url)
+        json_data = json.loads(r.content.decode())
+    except requests.exceptions.RequestException:
+        return {
+            "status": "offline",
+            "running_experiment_name": "offline",
+            "total_experiments_queued": "offline",
+            "current_run_number": "offline",
+            "raw_status": "offline",
+            "step_mode": False,
+            "finished_runs": 0,
+            "next_experiment_name": "",
+            "waiting_for_start": False,
+        }
+
+    raw_status = json_data["status"]
+    total = json_data["total_experiments_queued"]
+    finished = json_data.get("finished_runs", 0) or 0
+    next_name = json_data.get("next_experiment_name") or ""
+
+    if raw_status.lower() == "idle":
+        station_dict = {
+            "status": raw_status,
+            "running_experiment_name": json_data["running_experiment_name"],
+            "total_experiments_queued": total,
+            "current_run_number": json_data["current_run_number"],
+        }
+    elif raw_status.lower() == "paused" and json_data.get("step_mode") and finished > 0:
+        # 13.10.2026 Schrittmodus (Backend step_mode): nach jedem Schritt haelt das Backend an,
+        # der naechste Schritt startet erst mit "Start Experiments".
+        if next_name:
+            text = f"Paused - step {finished} of {total} done, next: {next_name} - press Start Experiments"
+        else:
+            text = f"Paused - all {finished} steps done, send the next step and press Start Experiments"
+        station_dict = {
+            "status": text,
+            "running_experiment_name": next_name,
+            "total_experiments_queued": total,
+            "current_run_number": finished,
+        }
+    elif json_data["current_run_number"] == 0 and raw_status.lower() == "paused":
+        station_dict = {
+            "status": f"{raw_status} - Not started",
+            "running_experiment_name": json_data["running_experiment_name"],
+            "total_experiments_queued": total,
+            "current_run_number": json_data["current_run_number"],
+        }
+    elif json_data["current_run_number"] == "" and raw_status.lower() == "ready":
+        station_dict = {
+            "status": f"{raw_status} - Queue finished",
+            "running_experiment_name": "all experiments finished",
+            "total_experiments_queued": total,
+            "current_run_number": total,
+        }
+    else:
+        station_dict = {
+            "status": raw_status,
+            "running_experiment_name": json_data["running_experiment_name"],
+            "total_experiments_queued": total,
+            "current_run_number": json_data["current_run_number"],
+        }
+
+    # Es wartet ein Schritt auf "Start Experiments": Paused und es gibt etwas zu starten - entweder
+    # einen naechsten Schritt nach einem fertigen (next_experiment_name) oder noch gar nicht
+    # gestartet mit gefuellter Schlange.
+    waiting = raw_status.lower() == "paused" and (
+        bool(next_name) or (finished == 0 and isinstance(total, int) and total > 0)
+    )
+    station_dict.update(
+        raw_status=raw_status,
+        step_mode=bool(json_data.get("step_mode")),
+        finished_runs=finished,
+        next_experiment_name=next_name,
+        waiting_for_start=waiting,
+    )
+    return station_dict
+
+
 @monitoring_blueprint.route("/overview", methods=["GET", "POST"])
 def deviceOverview():
     """Generates Device Overview, requests deviece list from API call. Uses experiments database information for list of devices and  adresses.
@@ -89,87 +177,12 @@ def deviceOverview():
         render_template: renders a page for the user with Device information overview.
     """
 
-    def _helper(station):
-        request_url = (
-            f"http://{station.get_address_address(station.id)}/api/station_overview"
-        )
-
-        try:
-            r = requests.post(request_url)
-
-            json_data = json.loads(r.content.decode())
-
-            if json_data["status"].lower() == "idle":
-                station_dict = {
-                    "status": json_data["status"],
-                    "running_experiment_name": json_data["running_experiment_name"],
-                    "total_experiments_queued": json_data["total_experiments_queued"],
-                    "current_run_number": json_data["current_run_number"],
-                }
-                return station_dict
-            elif (
-                json_data["status"].lower() == "paused"
-                and json_data.get("step_mode")
-                and json_data.get("finished_runs", 0) > 0
-            ):
-                # 13.10.2026 Schrittmodus (Backend step_mode): nach jedem Schritt haelt das Backend an,
-                # der naechste Schritt startet erst mit "Start Experiments".
-                next_name = json_data.get("next_experiment_name") or ""
-                total = json_data["total_experiments_queued"]
-                done = json_data.get("finished_runs", 0)
-                if next_name:
-                    text = f"Paused - step {done} of {total} done, next: {next_name} - press Start Experiments"
-                else:
-                    text = f"Paused - all {done} steps done, send the next step and press Start Experiments"
-                station_dict = {
-                    "status": text,
-                    "running_experiment_name": next_name,
-                    "total_experiments_queued": total,
-                    "current_run_number": done,
-                }
-            elif (
-                json_data["current_run_number"] == 0
-                and json_data["status"].lower() == "paused"
-            ):
-                station_dict = {
-                    "status": f"{json_data['status']} - Not started",
-                    "running_experiment_name": json_data["running_experiment_name"],
-                    "total_experiments_queued": json_data["total_experiments_queued"],
-                    "current_run_number": json_data["current_run_number"],
-                }
-            elif (
-                json_data["current_run_number"] == ""
-                and json_data["status"].lower() == "ready"
-            ):
-                station_dict = {
-                    "status": f"{json_data['status']} - Queue finished",
-                    "running_experiment_name": "all experiments finished",
-                    "total_experiments_queued": json_data["total_experiments_queued"],
-                    "current_run_number": json_data["total_experiments_queued"],
-                }
-            else:
-                station_dict = {
-                    "status": json_data["status"],
-                    "running_experiment_name": json_data["running_experiment_name"],
-                    "total_experiments_queued": json_data["total_experiments_queued"],
-                    "current_run_number": json_data["current_run_number"],
-                }
-            return station_dict
-        except requests.exceptions.RequestException as e:
-            station_dict = {
-                "status": "offline",
-                "running_experiment_name": "offline",
-                "total_experiments_queued": "offline",
-                "current_run_number": "offline",
-            }
-            return station_dict
-
     device_details_list = []
 
     for station in ExperimentalStation.get_all_stations():
         station_info = station.__dict__
         # merge the additonal infos from the request call into station info
-        station_info = station_info | _helper(station)
+        station_info = station_info | get_station_status(station)
 
         device_details_list.append(station_info)
 
@@ -373,6 +386,14 @@ def get_station_information(station_id, endpoint, *args, **kwargs):
             "danger",
         )
         abort(500)
+
+
+@monitoring_blueprint.route("/api/monitoring/station_status/<int:station_id>")
+def api_station_status(station_id):
+    """Aufbereiteter Stationsstatus (get_station_status) als JSON fuer die Statuszeile der
+    Stationsseite, die ihn alle 2 s abfragt. Nie 500: Backend weg -> status 'offline'."""
+    station = ExperimentalStation.query.get_or_404(station_id)
+    return jsonify(get_station_status(station))
 
 
 @monitoring_blueprint.route("/api/monitoring/get_station_overview/<int:station_id>")
