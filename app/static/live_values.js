@@ -20,6 +20,15 @@ export class LiveValues {
     this.current_experiment = null;
     this.rows = new Map(); // "device/observable" -> { value_cell, time_cell }
     this.table_body = null;
+    // 26.10.2026 Drei Zellen parallel: eigene Tabelle "Cells" mit einer Spalte je Zelle (Z1, Z2, Z3)
+    // und einer Zeile je Observable (psu current, mfc counter, gc H2, ...), damit die Zellen
+    // nebeneinander vergleichbar sind. Alles andere (Pumpe, Liquiline, GC-Status) bleibt in der
+    // normalen Tabelle darunter.
+    this.cells = [];               // Spaltenreihenfolge, z.B. ["Z1", "Z2", "Z3"]
+    this.cell_rows = new Map();    // "group observable" -> { tr, values: Map(cell -> { value_cell, last_timestamp }) }
+    this.cell_table = null;
+    this.cell_head_row = null;
+    this.cell_table_body = null;
     this.start_timestamp = null; // aeltester Datenpunkt des laufenden Experiments (~ Startzeit)
     this.elapsed_span = null;
     this.elapsed_timer = null;
@@ -56,14 +65,132 @@ export class LiveValues {
           this.start_timestamp = points[0][0];
         }
         const [timestamp, value] = points[points.length - 1];
-        this.set_value(device, observable, value, timestamp);
+        const split = LiveValues.split_cell(device, observable);
+        if (split) {
+          this.set_cell_value(`${split.group} ${split.observable}`, split.cell, value, timestamp);
+        } else {
+          this.set_value(device, observable, value, timestamp);
+        }
       }
     }
+  }
+
+  // Geraete psu1/psu2/psu3, mfc1/mfc2/mfc3, ventil_z1..3 und GC-Observablen gc_Z1_H2 ... gehoeren
+  // zu einer Zelle (gleiche Regel wie Plot_manager.split_cell in plots.js).
+  static split_cell(device, observable) {
+    let match = /^(psu|mfc|ventil_z)(\d+)$/.exec(device);
+    if (match) {
+      return { group: match[1] === "ventil_z" ? "ventil" : match[1], observable: observable, cell: `Z${match[2]}` };
+    }
+    match = /^gc_(Z\d+)_(.+)$/.exec(observable);
+    if (device === "microgc" && match) {
+      return { group: "gc", observable: match[2], cell: match[1] };
+    }
+    return null;
+  }
+
+  ensure_cell_table() {
+    if (this.cell_table || !this.anchor) {
+      return;
+    }
+    this.ensure_table(); // Ueberschrift + Versuchszeit zuerst
+    const heading = document.createElement("h3");
+    heading.innerText = "Cells";
+    this.cell_table = document.createElement("table");
+    this.cell_table.className = "table table-sm table-striped";
+    this.cell_table.style.width = "auto";
+    const thead = document.createElement("thead");
+    this.cell_head_row = document.createElement("tr");
+    const first = document.createElement("th");
+    first.innerText = "Observable";
+    this.cell_head_row.appendChild(first);
+    thead.appendChild(this.cell_head_row);
+    this.cell_table_body = document.createElement("tbody");
+    this.cell_table.append(thead, this.cell_table_body);
+    // vor der normalen Tabelle einfuegen (direkt nach der Ueberschrift)
+    const main_table = this.anchor.querySelector("table");
+    this.anchor.insertBefore(this.cell_table, main_table);
+    this.anchor.insertBefore(heading, this.cell_table);
+  }
+
+  ensure_cell_column(cell) {
+    if (this.cells.includes(cell)) {
+      return;
+    }
+    this.cells.push(cell);
+    this.cells.sort();
+    // Kopfzeile neu aufbauen und jede Zeile um die Spalte ergaenzen (in sortierter Reihenfolge)
+    while (this.cell_head_row.children.length > 1) {
+      this.cell_head_row.removeChild(this.cell_head_row.lastChild);
+    }
+    for (const name of this.cells) {
+      const th = document.createElement("th");
+      th.innerText = name;
+      th.style.textAlign = "right";
+      this.cell_head_row.appendChild(th);
+    }
+    for (const row of this.cell_rows.values()) {
+      const td = document.createElement("td");
+      td.style.textAlign = "right";
+      td.style.fontWeight = "600";
+      td.style.fontVariantNumeric = "tabular-nums";
+      td.innerText = "";
+      row.values.set(cell, { value_cell: td, last_timestamp: null });
+      while (row.tr.children.length > 1) {
+        row.tr.removeChild(row.tr.lastChild);
+      }
+      for (const name of this.cells) {
+        row.tr.appendChild(row.values.get(name).value_cell);
+      }
+    }
+  }
+
+  set_cell_value(row_key, cell, value, timestamp) {
+    this.ensure_cell_table();
+    let row = this.cell_rows.get(row_key);
+    if (!row) {
+      const tr = document.createElement("tr");
+      const label = document.createElement("td");
+      label.innerText = row_key;
+      tr.appendChild(label);
+      row = { tr: tr, values: new Map() };
+      this.cell_rows.set(row_key, row);
+      this.cell_table_body.appendChild(tr);
+      for (const name of this.cells) {
+        const td = document.createElement("td");
+        td.style.textAlign = "right";
+        td.style.fontWeight = "600";
+        td.style.fontVariantNumeric = "tabular-nums";
+        row.values.set(name, { value_cell: td, last_timestamp: null });
+        tr.appendChild(td);
+      }
+    }
+    this.ensure_cell_column(cell);
+    const entry = row.values.get(cell);
+    entry.value_cell.innerText = this.format_value(value);
+    entry.last_timestamp = timestamp;
+    this.render_cell_age(entry);
+  }
+
+  // Wie render_age: >5 s ohne neuen Wert -> rot (Alter steht im Tooltip).
+  render_cell_age(entry) {
+    if (entry.last_timestamp === null) {
+      return;
+    }
+    const age = Math.max(0, Math.round(Date.now() / 1000 - entry.last_timestamp));
+    const stale = age > 5;
+    entry.value_cell.style.color = stale ? "#c00" : "";
+    entry.value_cell.title = age <= 1 ? "now" : `${age} s ago`;
   }
 
   reset() {
     this.rows.clear();
     this.table_body = null;
+    this.cells = [];
+    this.cell_rows.clear();
+    this.cell_table = null;
+    this.cell_head_row = null;
+    this.cell_table_body = null;
     this.start_timestamp = null;
     this.backend_now = null;
     this.received_at = null;
@@ -146,6 +273,11 @@ export class LiveValues {
   update_elapsed() {
     for (const row of this.rows.values()) {
       this.render_age(row);
+    }
+    for (const row of this.cell_rows.values()) {
+      for (const entry of row.values.values()) {
+        this.render_cell_age(entry);
+      }
     }
     if (!this.elapsed_span) {
       return;

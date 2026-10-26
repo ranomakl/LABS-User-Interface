@@ -44,9 +44,58 @@ export class Plot_manager {
     }
   }
 
+  // 26.10.2026 Drei Zellen parallel: Geraete psu1/psu2/psu3, mfc1/mfc2/mfc3 und die GC-Observablen
+  // gc_Z1_H2/gc_Z2_H2/... gehoeren je zu einer Zelle. Liefert {group, observable, cell} oder null.
+  static split_cell(device, observable) {
+    let match = /^(psu|mfc)(\d+)$/.exec(device);
+    if (match) {
+      return { group: match[1], observable: observable, cell: `Z${match[2]}` };
+    }
+    match = /^gc_(Z\d+)_(.+)$/.exec(observable);
+    if (device === "microgc" && match) {
+      return { group: "gc", observable: match[2], cell: match[1] };
+    }
+    return null;
+  }
+
+  // Eine Kurve je Observable mit einer Linie je Zelle (statt drei getrennter Kurven untereinander).
+  update_cell_plot(group, observable, cell, observable_values) {
+    let device_group = this.charts.find((entry) => entry.device === group);
+    if (!device_group) {
+      device_group = { device: group, plots: [] };
+      this.charts.push(device_group);
+    }
+    let entry = device_group.plots.find((plot) => plot.observable === observable);
+    if (!entry) {
+      const device_div = this.append_device_to_dom(group);
+      const plot = new LinePlot(group, device_div, "line", observable, [], this.experiment_url);
+      plot.cell_mode = true;
+      plot.title = `${group} ${observable}`;
+      entry = { observable: observable, plot: plot };
+      device_group.plots.push(entry);
+    }
+    entry.plot.update_cell(cell, observable_values);
+  }
+
   create_or_update_plots(data) {
     // Iterate over all devices in update
     for (const [device, device_values] of Object.entries(data.updates)) {
+      // 26.10.2026: Zellen-Observablen (ausser Ventilstellungen) landen gemeinsam in einer Kurve
+      // je Observable; die uebrigen Geraete wie bisher.
+      let handled_all = true;
+      for (const [observable, observable_values] of Object.entries(device_values)) {
+        const split = Plot_manager.split_cell(device, observable);
+        if (split && observable !== "position") {
+          if (observable_values.length > 0) {
+            this.update_cell_plot(split.group, split.observable, split.cell, observable_values);
+          }
+        } else {
+          handled_all = false;
+        }
+      }
+      if (handled_all) {
+        continue;
+      }
       // check if device is allready registerd in decive object list
       const charts_index = this.charts.findIndex((device_group) => {
         return device_group.device === device;
@@ -72,6 +121,9 @@ export class Plot_manager {
         // If there is an observable without updates, skip this one
         if (observable_values.length == 0) {
           continue;
+        }
+        if (Plot_manager.split_cell(device, observable) && observable !== "position") {
+          continue; // schon oben als Zellen-Kurve behandelt
         }
 
         if (charts_index_now >= 0) {
@@ -284,7 +336,7 @@ class PlotObject {
     this.get_observable_parameter_value(experiment_url);
     this.experiment_url = experiment_url;
     this.averaged_data = [];
-    this.fist_timestamp = new Date(observable_data[0][0] * 1000);
+    this.fist_timestamp = observable_data.length ? new Date(observable_data[0][0] * 1000) : new Date();
     this.type = type;
 
     this.update_data_storage(observable_data);
@@ -562,7 +614,51 @@ class PlotObject {
 
 class LinePlot extends PlotObject {
   static DEFAULT_COLOR = "rgb(193, 0, 42)";
+  static CELL_COLORS = ["rgb(193, 0, 42)", "rgb(0, 90, 181)", "rgb(0, 140, 60)", "rgb(230, 140, 0)"];
   static window_seconds = null; // null = ganzer Lauf; sonst sichtbarer Bereich in Sekunden
+
+  // 26.10.2026 Zellen-Modus: eine Linie je Zelle (Z1, Z2, Z3) in derselben Kurve.
+  update_cell(cell, observable_data) {
+    if (this.plot == undefined) {
+      this.plot = this.set_plot_object();
+    }
+    const datasets = this.plot.data.datasets;
+    let dataset = datasets.find((entry) => entry.label === cell);
+    if (!dataset) {
+      const index = datasets.filter((entry) => entry.cell).length;
+      const color = LinePlot.CELL_COLORS[index % LinePlot.CELL_COLORS.length];
+      if (datasets.length === 1 && !datasets[0].cell && datasets[0].data.length === 0) {
+        dataset = datasets[0]; // den leeren Standard-Datensatz fuer die erste Zelle benutzen
+      } else {
+        dataset = { data: [], fill: false };
+        datasets.push(dataset);
+      }
+      dataset.label = cell;
+      dataset.cell = cell;
+      dataset.borderColor = color;
+      dataset.backgroundColor = color;
+      // Zellen in fester Reihenfolge (Z1, Z2, Z3) in der Legende
+      datasets.sort((a, b) => String(a.label).localeCompare(String(b.label)));
+    }
+    this.append_points(dataset, observable_data);
+    this.apply_window(false);
+    this.plot.update();
+  }
+
+  append_points(dataset, observable_data) {
+    const points = observable_data
+      .map(([timestamp, value]) => [timestamp, LinePlot.to_number(value)])
+      .filter((data_point) => data_point[1] !== null)
+      .map(([timestamp, value]) => ({ x: timestamp * 1000, y: value }));
+    for (const point of points) {
+      const last = dataset.data[dataset.data.length - 1];
+      if (last !== undefined && last.x === point.x) {
+        last.y = point.y;
+      } else {
+        dataset.data.push(point);
+      }
+    }
+  }
 
   // Sichtbaren X-Bereich setzen: [letzter Datenpunkt - Fenster, letzter Datenpunkt]. Bezug ist der
   // Backend-Zeitstempel des neuesten Werts, nicht die Browser-Uhr (Uhrenversatz Pi/PC egal).
@@ -571,11 +667,18 @@ class LinePlot extends PlotObject {
       return;
     }
     const scale_x = this.plot.options.scales.x;
-    const data = this.plot.data.datasets[0].data;
-    if (LinePlot.window_seconds === null || data.length === 0) {
+    // neuester Zeitstempel ueber alle Linien (im Zellen-Modus mehrere Datensaetze)
+    let latest = null;
+    for (const dataset of this.plot.data.datasets) {
+      const data = dataset.data;
+      if (data.length > 0 && (latest === null || data[data.length - 1].x > latest)) {
+        latest = data[data.length - 1].x;
+      }
+    }
+    if (LinePlot.window_seconds === null || latest === null) {
       delete scale_x.min;
     } else {
-      scale_x.min = data[data.length - 1].x - LinePlot.window_seconds * 1000;
+      scale_x.min = latest - LinePlot.window_seconds * 1000;
     }
     if (update) {
       this.plot.update();
@@ -661,7 +764,7 @@ class LinePlot extends PlotObject {
           },
           title: {
             display: true,
-            text: this.observable,
+            text: this.title || this.observable,
           },
           tooltip: {
             callbacks: {
