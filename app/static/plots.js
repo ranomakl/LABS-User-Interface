@@ -58,6 +58,19 @@ export class Plot_manager {
     return null;
   }
 
+  // 27.10.2026 (docs/Messstand I 27.10): keine Kurve fuer amount_of_charge und keine Kurven fuer
+  // Observablen ohne Zahlenwerte (Zustaende, Laufnamen, Ja/Nein-Werte). Die Zahlentabelle
+  // (live_values.js) zeigt diese Werte weiterhin; die Ventilstellung bleibt als Textfeld.
+  static plottable(observable, observable_values) {
+    if (observable === "amount_of_charge" || observable === "amount of charge") {
+      return false;
+    }
+    if (observable === "position") {
+      return true;
+    }
+    return observable_values.some(([timestamp, value]) => LinePlot.to_number(value) !== null);
+  }
+
   // Eine Kurve je Observable mit einer Linie je Zelle (statt drei getrennter Kurven untereinander).
   update_cell_plot(group, observable, cell, observable_values) {
     let device_group = this.charts.find((entry) => entry.device === group);
@@ -86,7 +99,7 @@ export class Plot_manager {
       for (const [observable, observable_values] of Object.entries(device_values)) {
         const split = Plot_manager.split_cell(device, observable);
         if (split && observable !== "position") {
-          if (observable_values.length > 0) {
+          if (observable_values.length > 0 && Plot_manager.plottable(split.observable, observable_values)) {
             this.update_cell_plot(split.group, split.observable, split.cell, observable_values);
           }
         } else {
@@ -124,6 +137,9 @@ export class Plot_manager {
         }
         if (Plot_manager.split_cell(device, observable) && observable !== "position") {
           continue; // schon oben als Zellen-Kurve behandelt
+        }
+        if (!Plot_manager.plottable(observable, observable_values)) {
+          continue; // keine Kurve fuer amount_of_charge / Nicht-Zahlen (27.10.2026)
         }
 
         if (charts_index_now >= 0) {
