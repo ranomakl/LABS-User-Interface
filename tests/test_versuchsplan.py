@@ -37,7 +37,8 @@ PREP = {
     "A12": " + NaOH (10 M)",            # B12 leer: Handeintrag
     "A17": " + supporting electrolyte Na2SO4 (MW: 142.04 g mol^-1)", "B17": 3.551,
 }
-PROTOKOLL = {"A1": "cumul. Time [min]", "A2": "Before"}
+PROTOKOLL = {"A1": "cumul. Time [min]", "A2": "Before", "A18": "After Electrolysis", "A19": "After Acidification",
+             "A20": "After Purging"}
 for i, t in enumerate([0, 10, 20, 30, 40, 50, 60, 80, 100, 120, 140, 160, 180, 200, 219], start=3):
     PROTOKOLL[f"A{i}"] = t
 ANALYTICS = {"A3": "microGC method", "B3": "MicroGC_standard_method_calibrated_0726",

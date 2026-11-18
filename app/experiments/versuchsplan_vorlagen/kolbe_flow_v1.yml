@@ -139,3 +139,64 @@ routinen:
       ziel_ph:           { zelle: Setup_parameter!B26, einheit_routine: pH }
       zielvolumen:       { zelle: Setup_parameter!B27, einheit_vorlage: mL, einheit_routine: mL }
       # toleranz, vol_gross, vol_klein, wartezeit_ph_messung, startvolumen: nicht in der Vorlage
+
+# ======================================================================================================
+# Stufe 3 (18.11.2026): Messwerte eines fertigen Laufs in eine KOPIE der Datei schreiben (Download auf der
+# Stage-Seite). Je Routine der Teil der Vorlage, der zu ihr gehoert. Observable = "geraet.observable" wie in
+# values.json des Laufs (Namen aus config.yml / config.messstand2.yml).
+#   zeitraster: Zeilen mit Zeit in Spalte A (Minuten ab Laufstart), je Spalte eine Observable
+#     art: wert (naechster Messwert, max. toleranz_s entfernt) | differenz_zu_t0 (z.B. Gaszaehler)
+#     ende: Zeile "After Electrolysis" -> letzter Wert des Laufs
+#   zellen: einzelne Zellen; quelle: startdatum | startzeit | endzeit | lauf | vermerk
+#           oder observable + art (letzter | erster) [+ minus_parameter: Laufparameter abziehen]
+ausgabe:
+
+  kolbe_elektrolyse_gc: &kolbe_ausgabe
+    zeitraster:
+      blatt: Exp_protocol
+      zeit_spalte: A
+      zeilen: 3-17
+      einheit: min
+      toleranz_s: 60
+      spalten:
+        B: { observable: mfc1.counter, art: differenz_zu_t0, runden: 1 }        # kumuliertes Gasvolumen [mLn]
+        C: { observable: liquiline.ph_ch1_value, art: wert, runden: 2 }        # pH
+        D: { observable: liquiline.conductivity_value, art: wert, runden: 3 }  # Leitfaehigkeit [mS/cm]
+        F: { observable: psu1.voltage, art: wert, runden: 3 }                  # Zellspannung [V]
+        G: { observable: liquiline.temperature_value, art: wert, runden: 1 }   # Temperatur [degC]
+        # E (kumuliertes H2) nur mit GC-Daten - noch nicht
+      ende:
+        zeile: 18                                                              # "After Electrolysis"
+        spalten: { C: liquiline.ph_ch1_value, D: liquiline.conductivity_value, F: psu1.voltage, G: liquiline.temperature_value }
+        runden: 3
+    zellen:
+      Setup_parameter!B2: { quelle: startdatum }
+      Exp_protocol!H3: { quelle: vermerk }
+
+  kolbe_elektrolyse_2k: *kolbe_ausgabe
+  kolbe_elektrolyse: *kolbe_ausgabe
+  kolbe_elektrolyse_ph: *kolbe_ausgabe
+  kolbe_elektrolyse_3x: *kolbe_ausgabe
+
+  kolbe_n2_spuelung:
+    zellen:
+      Exp_protocol!C2: { observable: liquiline.ph_ch1_value, art: letzter, runden: 2 }        # "Before": pH
+      Exp_protocol!D2: { observable: liquiline.conductivity_value, art: letzter, runden: 3 }  # "Before": Leitfaehigkeit
+
+  kolbe_n2_spuelung_3x:
+    zellen:
+      Exp_protocol!C2: { observable: liquiline.ph_ch1_value, art: letzter, runden: 2 }
+      Exp_protocol!D2: { observable: liquiline.conductivity_value, art: letzter, runden: 3 }
+
+  # Messstand II: Ansetzen. dosed_ml zaehlt ALLES dosierte Reagenz (Leitsalz, Carbonsaeure, NaOH, Regel-Dosen
+  # Base UND Saeure); fuer "NaOH (10 M)" werden die festen Zugaben Leitsalz/Carbonsaeure abgezogen.
+  ansatz:
+    zellen:
+      Exp_preparation!B12: { observable: pump1.dosed_ml, art: letzter, minus_parameter: [vol_carbonsaeure, vol_leitsalz],
+                             runden: 3, hinweis: "enthaelt auch die Saeure-Dosen der pH-Regelung" }
+      Exp_preparation!B18: { observable: liquiline.ph_value, art: letzter, runden: 2 }      # final pH
+      Setup_parameter!B2: { quelle: startdatum }
+
+  ph_regelung:
+    zellen:
+      Exp_preparation!B18: { observable: liquiline.ph_value, art: letzter, runden: 2 }

@@ -11,6 +11,10 @@ from flask import (
 from flask_login import login_required, current_user
 from .helper import get_if_xlsx_file
 from .versuchsplan import Versuchsplan, VorlageFehler
+from . import versuchsplan_ablage
+from .versuchsplan_befuellen import BefuellenFehler, befuellen
+from flask import send_file
+import io
 
 # from datetime import datetime
 from flask import jsonify
@@ -333,6 +337,7 @@ def _render_stage(stage_id, vorbelegung=None, plan=None):
         table_rows=table_rows,
         vorbelegung=vorbelegung or {},
         plan=plan,
+        plan_datei=versuchsplan_ablage.info(stage_id),
     )
 
 
@@ -352,12 +357,15 @@ def upload_versuchsplan(stage_id):
         flash("Der Versuchsplan muss eine .xlsx-Datei sein.", "warning")
         return redirect(url_for("experiments.edit_stage", stage_id=stage_id))
     einheiten = {p.name: p.unit for p in routine.get_parameters_in_routine()}
+    daten = file.stream.read()
     try:
-        plan = Versuchsplan.laden(file.stream, file.filename)
+        plan = Versuchsplan.laden(io.BytesIO(daten), file.filename)
         ergebnis = plan.fuer_routine(routine.name, einheiten)
     except VorlageFehler as exc:
         flash(f"Versuchsplan nicht uebernommen: {exc}", "danger")
         return redirect(url_for("experiments.edit_stage", stage_id=stage_id))
+    # Datei bei der Stage ablegen: daraus wird nach dem Lauf die Ergebnis-Excel (download_ergebnis)
+    versuchsplan_ablage.speichern(stage_id, file.filename, daten)
     for hinweis in ergebnis.hinweise:
         flash(hinweis, "warning")
     if ergebnis.offen:
@@ -659,3 +667,62 @@ def unshare_design_with_group(design_id):
     else:
         flash("Group or design not found.", "warning")
         return 404
+
+
+@experiments_blueprint.route("/download_ergebnis/<int:stage_id>", methods=["GET"])
+@login_required
+def download_ergebnis(stage_id):
+    """Ergebnis-Excel: Kopie des bei der Stage abgelegten Versuchsplans, befuellt mit den Messwerten des
+    letzten fertigen Laufs dieser Stage (Backend /api/run_log -> lauf.json + values.json). Das Original bleibt
+    unveraendert. Zuordnung: Abschnitt `ausgabe` in versuchsplan_vorlagen/*.yml."""
+    stage = Stage.query.get_or_404(stage_id)
+    routine = ExperimentalRoutines.query.get_or_404(stage.experimental_Routine_id)
+    abgelegt = versuchsplan_ablage.laden(stage_id)
+    if abgelegt is None:
+        flash("Fuer diese Stage ist kein Versuchsplan abgelegt. Erst die Excel-Vorlage hochladen.", "warning")
+        return redirect(url_for("experiments.edit_stage", stage_id=stage_id))
+    meta, vorlage_bytes = abgelegt
+    design = ExperimentalDesign.get_experimental_design_by_id(stage.experimental_design_id)
+    station = ExperimentalStation.get_station_by_id(design.station_id)
+    gesendete = [run for run in stage.experimental_runs if run.status]
+    if not gesendete:
+        flash("Noch kein Lauf dieser Stage an die Station geschickt - es gibt noch keine Messwerte.", "warning")
+        return redirect(url_for("experiments.edit_stage", stage_id=stage_id))
+    fertige = []
+    fehler = []
+    for run in gesendete:
+        run_id = f"{design.name}-{stage.get_sanitized_name()}-{run.id}"
+        try:
+            antwort = requests.get(f"http://{station.address}/api/run_log", params={"experiment_id": json.dumps(run_id)}, timeout=30)
+            antwort.raise_for_status()
+            daten = json.loads(antwort.text)
+        except (requests.exceptions.RequestException, ValueError) as exc:
+            fehler.append(f"{run_id}: Station nicht erreichbar oder Antwort unlesbar ({exc})")
+            continue
+        if "error" in daten:
+            fehler.append(f"{run_id}: {daten['error']}")
+            continue
+        if not daten.get("lauf", {}).get("finishing_time"):
+            fehler.append(f"{run_id}: Lauf noch nicht beendet")
+            continue
+        fertige.append((daten["lauf"].get("finishing_time"), run_id, daten))
+    if not fertige:
+        flash("Kein fertiger Lauf mit Messwerten gefunden: " + "; ".join(fehler), "warning")
+        return redirect(url_for("experiments.edit_stage", stage_id=stage_id))
+    fertige.sort(key=lambda x: str(x[0]))
+    _, run_id, daten = fertige[-1]
+    try:
+        zuordnung = Versuchsplan.laden(io.BytesIO(vorlage_bytes), meta["dateiname"]).vorlage
+        ausgabe = (zuordnung.get("ausgabe") or {}).get(routine.name)
+        ergebnis_bytes, protokoll = befuellen(vorlage_bytes, routine.name, ausgabe, daten["lauf"], daten["values"])
+    except (VorlageFehler, BefuellenFehler) as exc:
+        flash(f"Ergebnis-Excel nicht erzeugt: {exc}", "danger")
+        return redirect(url_for("experiments.edit_stage", stage_id=stage_id))
+    for satz in protokoll:
+        flash(satz, "info")
+    for satz in fehler:
+        flash(satz, "warning")
+    flash(f"Ergebnis-Excel aus Lauf {run_id} erzeugt. Das Original bleibt unveraendert.", "success")
+    return send_file(io.BytesIO(ergebnis_bytes), as_attachment=True,
+                     download_name=versuchsplan_ablage.ergebnisname(meta["dateiname"]),
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
