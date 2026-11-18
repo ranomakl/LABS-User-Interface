@@ -10,6 +10,7 @@ from flask import (
 )
 from flask_login import login_required, current_user
 from .helper import get_if_xlsx_file
+from .versuchsplan import Versuchsplan, VorlageFehler
 
 # from datetime import datetime
 from flask import jsonify
@@ -302,6 +303,12 @@ def edit_design(design_id):
 @experiments_blueprint.route("/edit_stage/<int:stage_id>", methods=["GET", "POST"])
 @login_required
 def edit_stage(stage_id):
+    return _render_stage(stage_id)
+
+
+def _render_stage(stage_id, vorbelegung=None, plan=None):
+    """Stage-Seite. vorbelegung: {Parametername: Text} fuer das Formular "Add run" (aus dem Versuchsplan),
+    plan: versuchsplan.Ergebnis fuer die Anzeige der gelesenen Zellen."""
     stage = Stage.query.get_or_404(stage_id)
     routine = ExperimentalRoutines.query.get_or_404(stage.experimental_Routine_id)
     session["stage_id"] = stage_id
@@ -324,7 +331,44 @@ def edit_stage(stage_id):
         stage=stage,
         parameters=parameters,
         table_rows=table_rows,
+        vorbelegung=vorbelegung or {},
+        plan=plan,
     )
+
+
+@experiments_blueprint.route("/upload_versuchsplan/<int:stage_id>", methods=["POST"])
+@login_required
+def upload_versuchsplan(stage_id):
+    """Excel-Versuchsplan der Chemiker (feste Zellen) lesen und das Formular "Add run" damit vorbelegen.
+    Legt KEINEN Lauf an: der Chemiker prueft die Werte und drueckt selbst "Add" (Konzept 10.11.2026, Stufe 1+2).
+    Zuordnung Zelle -> Parameter: app/experiments/versuchsplan_vorlagen/*.yml."""
+    stage = Stage.query.get_or_404(stage_id)
+    routine = ExperimentalRoutines.query.get_or_404(stage.experimental_Routine_id)
+    file = request.files.get("plan_file")
+    if file is None or file.filename == "":
+        flash("Bitte eine Versuchsplan-Datei (.xlsx) auswaehlen.", "warning")
+        return redirect(url_for("experiments.edit_stage", stage_id=stage_id))
+    if not get_if_xlsx_file(file.filename):
+        flash("Der Versuchsplan muss eine .xlsx-Datei sein.", "warning")
+        return redirect(url_for("experiments.edit_stage", stage_id=stage_id))
+    einheiten = {p.name: p.unit for p in routine.get_parameters_in_routine()}
+    try:
+        plan = Versuchsplan.laden(file.stream, file.filename)
+        ergebnis = plan.fuer_routine(routine.name, einheiten)
+    except VorlageFehler as exc:
+        flash(f"Versuchsplan nicht uebernommen: {exc}", "danger")
+        return redirect(url_for("experiments.edit_stage", stage_id=stage_id))
+    for hinweis in ergebnis.hinweise:
+        flash(hinweis, "warning")
+    if ergebnis.offen:
+        flash(
+            f"Aus '{ergebnis.dateiname}' uebernommen: {len(ergebnis.werte)} von {len(einheiten)} Parametern. "
+            f"Von Hand eintragen: {', '.join(ergebnis.offen)}. Dann 'Add' druecken.",
+            "info",
+        )
+    else:
+        flash(f"Alle {len(ergebnis.werte)} Parameter aus '{ergebnis.dateiname}' uebernommen. Pruefen, dann 'Add' druecken.", "success")
+    return _render_stage(stage_id, vorbelegung=ergebnis.werte, plan=ergebnis)
 
 
 @experiments_blueprint.route("/delete_stage/<int:stage_id>", methods=["GET", "POST"])

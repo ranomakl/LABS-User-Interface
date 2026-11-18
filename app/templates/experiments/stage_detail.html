@@ -120,8 +120,69 @@
           </dl>
         </div>
       </div>
+      <div class="row">
+        <div class="col-md-8 block" style="text-align: justify">
+          <h2>
+            Versuchsplan (Excel-Vorlage der Chemiker)
+          </h2>
+          <p class="text-justify">
+            Den ausgefuellten Versuchsplan (z.B. <kbd>Experiment_26174_flow_cell_...xlsx</kbd>) hochladen. Die Datei
+            wird an ihren Beschriftungen erkannt, die passenden Zellen werden gelesen und unten in das Formular
+            <kbd>Add run</kbd> eingetragen. Es wird <strong>kein</strong> Lauf angelegt: Werte pruefen, fehlende
+            Felder ausfuellen, dann <kbd>Add</kbd>. Zuordnung Zelle &rarr; Parameter:
+            <kbd>app/experiments/versuchsplan_vorlagen/</kbd>.
+          </p>
+          <form role="form" method="POST" action="{{ url_for('experiments.upload_versuchsplan', stage_id= stage.id ) }}"
+            enctype="multipart/form-data">
+            <div class="form-group">
+              <label for="plan_file">
+                Versuchsplan (*.xlsx)
+              </label>
+              <input type="file" class="form-control-file" id="plan_file" name="plan_file" accept=".xlsx">
+            </div>
+            <button type="submit" class="btn btn-primary">
+              Versuchsplan lesen und Formular vorbelegen
+            </button>
+          </form>
+        </div>
+      </div>
     </div>
   </div>
+
+  {% if plan %}
+  <div class="container">
+    <br>
+    <h2>Aus dem Versuchsplan gelesen</h2>
+    <p>
+      Datei <kbd>{{ plan.dateiname }}</kbd>, erkannt als &bdquo;{{ plan.vorlage }}&ldquo;, Routine
+      <kbd>{{ plan.routine }}</kbd>. Die Spalte &bdquo;Wert&ldquo; steht unten im Formular.
+    </p>
+    <table class="table table-sm table-bordered">
+      <thead>
+        <tr>
+          <th>Parameter</th>
+          <th>Zelle</th>
+          <th>Bezeichnung in der Vorlage</th>
+          <th>Gelesen</th>
+          <th>Wert</th>
+          <th>Hinweis</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for z in plan.zeilen %}
+        <tr class="{{ 'table-warning' if not z.wert else '' }}">
+          <td>{{ z.parameter }}{% if z.einheit %} ({{ z.einheit }}){% endif %}</td>
+          <td><kbd>{{ z.zelle }}</kbd></td>
+          <td>{{ z.bezeichnung }}</td>
+          <td>{{ z.roh }}</td>
+          <td><strong>{{ z.wert }}</strong></td>
+          <td>{{ z.hinweis }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
 
   <div class="container">
     <br>
@@ -160,7 +221,8 @@
             <td> <button class="btn btn-primary" id="submit" type="submit" value="Create new">Add</button>
             </td>
             {% for parameter in parameters %}
-            <td> <input name="{{parameter.id}}" id="submit" class="form-control" required></td>
+            <td> <input name="{{parameter.id}}" class="form-control {{ 'border-warning' if plan and parameter.name not in vorbelegung else '' }}"
+                        value="{{ vorbelegung.get(parameter.name, '') }}" placeholder="{{ parameter.name }}" required></td>
             {% endfor %}
           </tr>
         </tbody>

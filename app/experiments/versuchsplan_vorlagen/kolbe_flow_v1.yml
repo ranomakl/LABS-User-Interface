@@ -1,0 +1,141 @@
+# Zuordnung: Excel-Versuchsplan der Chemiker -> Routinenparameter in LABS (18.11.2026).
+#
+# Vorlage: Experiment_<Nr>_flow_cell_...xlsx (Kolbe-Elektrolyse, Flusszelle), Blaetter Setup_parameter,
+# Exp_preparation, Exp_protocol, Exp_postprocessing, Analytics. Untersucht an docs/versuchsplanung_26174-26177.zip
+# (Backend-Repo). Alle Zellangaben: Blatt!Zelle. Bereiche: Blatt!A3:A17.
+#
+# Die Vorlage wird an den Beschriftungen in `erkennung` erkannt (Rafael 18.11.2026: Vorlage soll unveraendert
+# bleiben, keine Versionszelle). Verschiebt jemand eine Zeile, passt die Beschriftung nicht mehr und die Datei
+# wird abgelehnt statt still falsche Werte zu liefern.
+#
+# Je Parameter:
+#   zelle            eine Zelle                       zellen: Bereich -> mit `trenner` verbunden (Standard ';')
+#   summe            Liste von Zellen, wird addiert    text: true -> Wert unveraendert als Text
+#   faktor           Umrechnung (z.B. mA -> A)         runden / ganzzahl: Darstellung
+#   einheit_vorlage  nur Doku                          einheit_routine: wird gegen die Einheit der Station geprueft
+#   hinweis          Text fuer die Anzeige
+# Parameter der Routine ohne Eintrag hier bleiben leer und werden gemeldet ("von Hand eintragen").
+
+vorlage:
+  name: Kolbe Flusszelle (Vorlage der Chemiker, Stand 10/2026)
+  erkennung:
+    Setup_parameter!A1: Experiment number
+    Setup_parameter!A9: one- or two-chamber
+    Setup_parameter!A18: flow rate
+    Setup_parameter!A23: Carboxylic acid concentration
+    Setup_parameter!A26: pH value
+    Setup_parameter!A27: Pool volume
+    Setup_parameter!A29: Measurement mode (potentiostatic / galvanostatic)
+    Setup_parameter!A30: voltage/current
+    Setup_parameter!A33: Duration (regarding z = 1 & galvanostatic)
+    Exp_preparation!A5: Water (part 1)
+    Exp_preparation!A6: "n-butanoic acid (MW: 88.1 g mol^-1; Density: 0.96 g mL^-1)"
+    Exp_preparation!A12: "+ NaOH (10 M)"
+    Exp_preparation!A17: "+ supporting electrolyte Na2SO4 (MW: 142.04 g mol^-1)"
+    Exp_protocol!A1: "cumul. Time [min]"
+    Analytics!A3: microGC method
+    Analytics!A12: N2 purging before electrolysis
+  pruefungen:
+    - zelle: Setup_parameter!B29
+      erwartet: galvanostatic
+      meldung: die Kolbe-Routinen fahren Konstantstrom (galvanostatisch)
+
+routinen:
+
+  # ---------------------------------------------------------------- Messstand I: Kolbe-Elektrolyse
+  kolbe_elektrolyse_gc:
+    nur_wenn: { zelle: Setup_parameter!B9, wert: One-Chamber }
+    parameter:
+      versuch:     { zelle: Setup_parameter!B1, text: true, hinweis: Versuchsnummer, auch Praefix der GC-Dateien }
+      rate:        { zelle: Setup_parameter!B18, einheit_vorlage: mL/min, einheit_routine: mL/min }
+      current:     { zelle: Setup_parameter!B30, einheit_vorlage: mA, einheit_routine: A, faktor: 0.001, runden: 4,
+                     hinweis: Vorlage in mA, Routine in A }
+      minutes:     { zelle: Setup_parameter!B33, einheit_vorlage: min, einheit_routine: min, runden: 1,
+                     hinweis: Formel in der Vorlage (Dauer aus Konzentration, Strom, FE) }
+      gc_minutes:  { zellen: Exp_protocol!A3:A17, trenner: ";", ganzzahl: true,
+                     hinweis: "GC-Messzeitpunkte = Zeitraster des Protokollblatts; 0 eintragen = Dauermessung" }
+      # max_voltage steht nicht in der Vorlage -> bleibt leer, von Hand eintragen
+
+  kolbe_elektrolyse_2k:
+    nur_wenn: { zelle: Setup_parameter!B9, wert: Two-Chamber }
+    parameter:
+      versuch:     { zelle: Setup_parameter!B1, text: true }
+      rate:        { zelle: Setup_parameter!B18, einheit_vorlage: mL/min, einheit_routine: mL/min }
+      current:     { zelle: Setup_parameter!B30, einheit_vorlage: mA, einheit_routine: A, faktor: 0.001, runden: 4 }
+      minutes:     { zelle: Setup_parameter!B33, einheit_routine: min, runden: 1 }
+      gc_minutes:  { zellen: Exp_protocol!A3:A17, trenner: ";", ganzzahl: true }
+      # max_voltage, rate_anolyte: nicht in der Vorlage
+
+  kolbe_elektrolyse:
+    parameter:
+      rate:        { zelle: Setup_parameter!B18, einheit_routine: mL/min }
+      current:     { zelle: Setup_parameter!B30, einheit_vorlage: mA, einheit_routine: A, faktor: 0.001, runden: 4 }
+      minutes:     { zelle: Setup_parameter!B33, einheit_routine: min, runden: 1 }
+
+  kolbe_elektrolyse_ph:
+    parameter:
+      rate:        { zelle: Setup_parameter!B18, einheit_routine: mL/min }
+      current:     { zelle: Setup_parameter!B30, einheit_vorlage: mA, einheit_routine: A, faktor: 0.001, runden: 4 }
+      minutes:     { zelle: Setup_parameter!B33, einheit_routine: min, runden: 1 }
+
+  kolbe_elektrolyse_3x:
+    parameter:
+      versuch:     { zelle: Setup_parameter!B1, text: true }
+      rate:        { zelle: Setup_parameter!B18, einheit_routine: mL/min }
+      minutes:     { zelle: Setup_parameter!B33, einheit_routine: min, runden: 1 }
+      gc_minutes:  { zellen: Exp_protocol!A3:A17, trenner: ";", ganzzahl: true }
+      # current_z1..z3, max_voltage, rate_anolyte: nicht in der Vorlage (ein Strom fuer drei Zellen?)
+
+  kolbe_n2_spuelung:
+    parameter:
+      rate:        { zelle: Setup_parameter!B18, einheit_routine: mL/min }
+      minutes:     { zelle: Analytics!B12, einheit_vorlage: min, einheit_routine: min, hinweis: N2-Spuelung vor der Elektrolyse }
+
+  kolbe_n2_spuelung_3x:
+    parameter:
+      rate:        { zelle: Setup_parameter!B18, einheit_routine: mL/min }
+      minutes:     { zelle: Analytics!B12, einheit_routine: min }
+
+  kolbe_pumpe_zeit:
+    parameter:
+      rate:        { zelle: Setup_parameter!B18, einheit_routine: mL/min }
+      # minutes: Umwaelzzeit steht nicht in der Vorlage
+
+  kolbe_pumpe_zeit_3x:
+    parameter:
+      rate:        { zelle: Setup_parameter!B18, einheit_routine: mL/min }
+
+  kolbe_gas_zaehlen_pumpe:
+    parameter:
+      rate:        { zelle: Setup_parameter!B18, einheit_routine: mL/min }
+      # minutes: die Vorlage gibt fuer die N2-Spuelung NACH der Elektrolyse ein Volumen (Analytics!B13, mLn), keine Zeit
+
+  kolbe_gc_messung:
+    parameter:
+      method:      { zelle: Analytics!B3, text: true, hinweis: Methodenname muss am microGC existieren }
+      name:        { zelle: Setup_parameter!B1, text: true, hinweis: "Versuchsnummer; Zusatz wie _rep1 von Hand" }
+      # tags: nicht in der Vorlage (z.B. Kolbe;MP)
+
+  # ---------------------------------------------------------------- Messstand II: Ansetzen der Loesung
+  # Carbonsaeure: die Vorlage rechnet drei Saeuren (n-C4, n-C6, n-C8) einzeln aus; an Port 6 haengt die fertige
+  # Mischung (Rafael 18.11.2026) -> die drei Volumina werden addiert.
+  # Leitsalz: die Vorlage gibt Na2SO4 in Gramm, LABS dosiert nur Fluessigkeiten -> offen (Frage an den Chemiker,
+  # docs/fragen_chemiker_excel_vorlage_18-11-2026.txt im Backend-Repo), vol_leitsalz bleibt leer.
+  ansatz:
+    parameter:
+      vol_wasser:        { zelle: Exp_preparation!B5, einheit_vorlage: mL, einheit_routine: mL, runden: 2,
+                           hinweis: "Water (part 1) = Pool/2" }
+      vol_carbonsaeure:  { summe: [Exp_preparation!B6, Exp_preparation!B7, Exp_preparation!B8], einheit_routine: mL, runden: 2,
+                           hinweis: "Summe n-C4 + n-C6 + n-C8 (fertige Mischung an Port 6)" }
+      vol_naoh:          { zelle: Exp_preparation!B12, einheit_vorlage: mL, einheit_routine: mL, runden: 2,
+                           hinweis: "10 M NaOH, Handeintrag in der Vorlage (aequimolar zur Carbonsaeure)" }
+      ziel_ph:           { zelle: Setup_parameter!B26, einheit_routine: pH }
+      zielvolumen:       { zelle: Setup_parameter!B27, einheit_vorlage: mL, einheit_routine: mL }
+      # vol_leitsalz: Na2SO4 in g (Exp_preparation!B17) - Umrechnung offen
+      # toleranz, vol_gross, vol_klein, wartezeit_ph_messung, pause_zugabe: Regelparameter, nicht in der Vorlage
+
+  ph_regelung:
+    parameter:
+      ziel_ph:           { zelle: Setup_parameter!B26, einheit_routine: pH }
+      zielvolumen:       { zelle: Setup_parameter!B27, einheit_vorlage: mL, einheit_routine: mL }
+      # toleranz, vol_gross, vol_klein, wartezeit_ph_messung, startvolumen: nicht in der Vorlage

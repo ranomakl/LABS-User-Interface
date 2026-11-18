@@ -182,4 +182,5 @@ app/bayesian/Archive/
 **/__pycache__/
 .matplotlib-cache/
 .joblib-cache/
-
+# echte Excel-Vorlagen der Chemiker nur lokal fuer tests/test_versuchsplan.py
+tests/data/*.xlsx
