@@ -152,13 +152,13 @@ routinen:
 ausgabe:
 
   kolbe_elektrolyse_gc: &kolbe_ausgabe
-    zeitraster:
+    zeitraster: &kolbe_zeitraster
       blatt: Exp_protocol
       zeit_spalte: A
       zeilen: 3-17
       einheit: min
       toleranz_s: 60
-      spalten:
+      spalten: &kolbe_spalten
         B: { observable: mfc1.counter, art: differenz_zu_t0, runden: 1 }        # kumuliertes Gasvolumen [mLn]
         C: { observable: liquiline.ph_ch1_value, art: wert, runden: 2 }        # pH
         D: { observable: liquiline.conductivity_value, art: wert, runden: 3 }  # Leitfaehigkeit [mS/cm]
@@ -173,7 +173,15 @@ ausgabe:
       Setup_parameter!B2: { quelle: startdatum }
       Exp_protocol!H3: { quelle: vermerk }
 
-  kolbe_elektrolyse_2k: *kolbe_ausgabe
+  # Zwei-Kammer-Zelle: seit 19.11.2026 misst mfc3 (MFM3) das Anolytgas, mfc1 (MFM1) das Katholytgas.
+  # Spalte B bleibt wie bei den anderen Routinen das Anolytgas, also hier mfc3.
+  kolbe_elektrolyse_2k:
+    <<: *kolbe_ausgabe
+    zeitraster:
+      <<: *kolbe_zeitraster
+      spalten:
+        <<: *kolbe_spalten
+        B: { observable: mfc3.counter, art: differenz_zu_t0, runden: 1 }        # kumuliertes Anolytgas [mLn]
   kolbe_elektrolyse: *kolbe_ausgabe
   kolbe_elektrolyse_ph: *kolbe_ausgabe
   kolbe_elektrolyse_3x: *kolbe_ausgabe
